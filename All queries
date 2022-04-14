@@ -1,0 +1,92 @@
+#Table combination query
+CREATE TABLE 'full' AS
+SELECT *
+FROM '202109-divvy-tripdata'
+UNION
+SELECT *
+FROM '202110-divvy-tripdata'
+UNION
+SELECT *
+FROM '202111-divvy-tripdata'
+UNION
+SELECT *
+FROM '202112-divvy-tripdata'
+UNION
+SELECT *
+FROM '202201-divvy-tripdata'
+UNION
+SELECT *
+FROM '202202-divvy-tripdata'
+
+#Processing query
+CREATE TABLE full_processed AS
+WITH 
+calculation_temp AS (
+ SELECT
+  ride_id,
+  rideable_type AS bike_type,
+  member_casual AS membership_type,
+  start_station_id,
+  end_station_id,
+  started_at,
+  CASE
+   WHEN strftime('%m', started_at) = '09' THEN 9
+   WHEN strftime('%m', started_at) = '10' THEN 10
+   WHEN strftime('%m', started_at) = '11' THEN 11
+   WHEN strftime('%m', started_at) = '12' THEN 12
+   WHEN strftime('%m', started_at) = '01' THEN 13
+   WHEN strftime('%m', started_at) = '02' THEN 14
+  END AS month,
+  CASE
+   WHEN strftime('%w', started_at) = '0' THEN 'Sunday'
+   WHEN strftime('%w', started_at) = '1' THEN 'Monday'
+   WHEN strftime('%w', started_at) = '2' THEN 'Tuesday'
+   WHEN strftime('%w', started_at) = '3' THEN 'Wednesday'
+   WHEN strftime('%w', started_at) = '4' THEN 'Thursday'
+   WHEN strftime('%w', started_at) = '5' THEN 'Friday'
+   WHEN strftime('%w', started_at) = '6' THEN 'Saturday'
+   END AS week_day,
+   strftime('%H', started_at) AS hour_of_day,
+   ROUND((julianday(ended_at) - julianday(started_at)) * 1440,1) AS ride_length_minutes
+ FROM full)
+
+SELECT
+ride_id,
+bike_type,
+membership_type,
+start_station_id,
+end_station_id,
+started_at,
+week_day,
+ride_length_minutes,
+hour_of_day,
+month
+FROM calculation_temp
+
+#Cleaning query
+CREATE TABLE full_processed_cleaned AS 
+SELECT *
+FROM full_processed
+WHERE ride_length_minutes > 0
+AND 
+ride_id NOT IN 
+ (SELECT ride_id 
+  FROM full
+  WHERE start_station_id IS NULL OR end_station_id IS NULL)
+AND ride_length_minutes < 1440 
+AND bike_type <> 'docked_bike'
+
+#Analysis query
+CREATE TABLE aggregate_functions AS
+SELECT
+ membership_type,
+ bike_type,
+ month,
+ week_day,
+ hour_of_day,
+ROUND(AVG(ride_length_minutes),1) AS avg_duration,
+ROUND(SUM(ride_length_minutes),1) AS cumulative_durations,
+COUNT(*) AS total_rides
+FROM full_processed_cleaned
+GROUP BY membership_type, bike_type, month, week_day, hour_of_day
+ORDER BY membership_type, bike_type, month, week_day, hour_of_day
